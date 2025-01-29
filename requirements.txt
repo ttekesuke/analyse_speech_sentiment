@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+transformers
+torch
+fugashi
+ipadic
+unidic_lite
+protobuf
+jinja2
+uvicorn[standard]
+websockets

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>感情分析アプリ</title>
+    <script src="https://www.gstatic.com/charts/loader.js"></script>
+    <script>
+        let socket;
+        let sentimentData = [];
+        const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        // 音声認識が停止されたときに再開する
+        recognition.onend = () => {
+            if (isListening) {                
+                recognition.start();
+            }
+        };                 
+        let timeout;
+        let isListening = false;
+        function startAnalyse() {
+            socket = new WebSocket("ws://localhost:8000/ws");
+            recognition.continuous = true;
+            recognition.interimResults = false;
+            
+
+            // 音声認識時
+            recognition.onresult = function(event) {
+                const lastTranscript = event.results[event.results.length - 1][0].transcript; // 最新の発話のみ取得
+                // ソケット送信
+                socket.send(lastTranscript);
+            };  
+
+            isListening = true
+            recognition.start();
+            
+            // 受信時
+            socket.onmessage = function(event) {
+                const result = JSON.parse(event.data);
+                
+                sentimentData.push({
+                    time: new Date().toLocaleTimeString(),
+                    score: result.score,
+                    text: result.text                    
+                });
+                document.getElementById("result").innerText = sentimentData.map(data => data.text).join('')
+                drawChart();
+            };            
+        }
+
+        function stopAnalyse() {
+            socket.close();
+            isListening = false;
+            recognition.stop();
+            
+        }
+
+        function drawChart() {
+            google.charts.load('current', {'packages':['corechart']});
+            google.charts.setOnLoadCallback(() => {
+                const data = google.visualization.arrayToDataTable([['時間', 'スコア'], ...sentimentData.map(data => [data.time, data.score])]);
+                const options = { title: 'ネガポジスコア', legend: { position: 'bottom' } };
+                const chart = new google.visualization.LineChart(document.getElementById('curve_chart'));
+                chart.draw(data, options);
+            });
+        }
+    </script>
+</head>
+<body>
+    <h2>感情分析</h2>
+    <button onclick="startAnalyse()">音声認識開始</button>
+    <button onclick="stopAnalyse()">音声認識終了</button>
+    <p id="result"></p>
+    <div id="curve_chart" style="width: 90%; height: 500px"></div>
+</body>
+</html>
