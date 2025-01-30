@@ -5,7 +5,7 @@ from fastapi.templating import Jinja2Templates
 import json
 
 app = FastAPI()
-templates = Jinja2Templates(directory="templates")
+templates = Jinja2Templates(directory="app/templates")
 
 # Hugging Face の感情分析モデルをロード
 classifier = pipeline(
