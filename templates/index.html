@@ -3,76 +3,125 @@
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>感情分析アプリ</title>
+        <title>感情分析</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM" crossorigin="anonymous">
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" crossorigin="anonymous"></script>
         <script src="https://cdn.jsdelivr.net/npm/chart.js@3.5.0/dist/chart.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.10.6/moment.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.10.6/locale/ja.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment@1.0.0"></script>    
+        <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>        
         <script>
-            let socket;
+            let socket = new WebSocket("ws://localhost:8000/ws");
+            const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
             let isListening = false;
             let chart;
             let endTime;
             let started = false;
-            const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+            // 音声認識時            
+            recognition.onresult = function(event) {
+                    if (socket.readyState === 1) {
+                        const lastTranscript = event.results[event.results.length - 1][0].transcript;
+                        socket.send(lastTranscript);
+                    }
+                };
             recognition.continuous = true;
             recognition.interimResults = false;  
+            // サーバから受信
+            socket.onmessage = function(event) {
+                const result = JSON.parse(event.data);
+                endTime = new Date();                    
+                updateChart(result);
+                const span = document.createElement('span');
+                span.innerHTML = result.text;
+                span.className = 'border order-dark rounded-2 p-2';
+                document.getElementById("texts").appendChild(span)
+                
+            };            
             // Web Speech APIは無音状態が続くと自動的に停止されるので再開する
             recognition.onend = () => {
                 if (isListening) {
                     recognition.start();
                 }
             };
-            function startAnalyse() {
-                socket = new WebSocket("ws://localhost:8000/ws");
-
-                // 音声認識時
-                recognition.onresult = function(event) {
-                    endTime = new Date();
-                    if (socket.readyState === 1) {
-                        const lastTranscript = event.results[event.results.length - 1][0].transcript;
-                        socket.send(lastTranscript);
-                    }
-                };
-
+            function onClickSendText() {
+                const text = document.getElementById("text").value;
+                if (socket.readyState === 1) {
+                    socket.send(text);
+                    document.getElementById("text").value = "";
+                }
+            }
+            function startSpeechRecognition() {
                 isListening = true;
                 recognition.start();
-                
-                // サーバから受信
-                socket.onmessage = function(event) {
-                    const result = JSON.parse(event.data);
-                    updateChart(result.score);
-                    document.getElementById("result").innerText += result.text;
-                };
             }
 
-            function stopAnalyse() {
-                socket.close();
+            function stopSpeechRecognition() {
                 isListening = false;
                 recognition.stop();
             }
 
             function createChart() {
                 const ctx = document.getElementById('chart').getContext('2d');
-                ctx.canvas.height = "100%";
-                chart = new Chart(ctx, {
+                ctx.canvas.height = "100%"; 
+                chart = new Chart(ctx, 
+                {
                     type: 'line',
                     data: {
                         labels: [],
                         datasets: [{
-                            label: 'スコア',
                             data: [],
+                            backgroundColor: 'blue',
                             borderColor: 'blue',
-                            pointRadius: 10,
-                            fill: false,
+                            pointRadius: 0,                      
                         }]
                     },
-                    options: {
+                    options: { 
+                        plugins: {                  
+                            legend: {
+                                display: false,
+                            },                            
+                            datalabels: {
+                                backgroundColor: function(context) {
+                                    return context.dataset.backgroundColor;
+                                },
+                                borderRadius: 4,
+                                color: 'white',
+                                font: {
+                                    weight: 'bold'
+                                },
+                                padding: 6,
+                                listeners: {
+                                    enter: function(context) {
+                                        const spans = document.querySelectorAll("#texts span");
+                                        spans[context.dataIndex / 2].classList.add("bg-primary", "text-white");
+                                    },
+                                    leave: function(context) {
+                                        const spans = document.querySelectorAll("#texts span");
+                                        spans[context.dataIndex / 2].classList.remove("bg-primary", "text-white");
+                                    }
+                                },
+                                                                
+                            }                             
+                        },
+
                         responsive: true,
-                        maintainAspectRatio: false ,                   
-                        plugins: {
-                            legend: {display: false}
-                        },                
+                        maintainAspectRatio: false ,                                 
+
+                        aspectRatio: 5 / 3,
+                        layout: {
+                            padding: {
+                                top: 32,
+                                right: 16,
+                                bottom: 16,
+                                left: 8
+                            }
+                        },
+                        elements: {
+                            line: {
+                                fill: false,
+                            }
+                        },
                         scales: {
                             x: { 
                                 scaleLabel: {
@@ -85,35 +134,38 @@
                                     unit: 'minute',
                                     stepSize: 1,
                                     displayFormats: {
-                                        minutess: 'HH:mm:ss'
+                                        minutes: 'HH:mm:ss'
                                     }
                                 },
                             },
-                            y: { title: { display: true, text: 'スコア' }, min: -1, max: 1 }
-                        }
-                    }
+                            y: { stacked: true, title: { display: true, text: 'スコア' }, min: -1, max: 1 }
+                        },       
+                    },
+                    plugins: [
+                        ChartDataLabels,
+                    ]                    
                 });
             }
-
-            function onClickRecognitionToggle(){
-                if (started) {
-                    stopAnalyse()
-                    
-                    started = false;
-                } else {
-                    startAnalyse();
-                    started = true;
-                }
-                document.getElementById("regognition-toggle").innerText = started ? "停止" : "開始";
-            }
-
-            function updateChart(score) {
+            function updateChart(result) {
                 chart.data.labels.push(endTime);
-                chart.data.datasets[0].data.push(score);    
+                chart.data.datasets[0].data.push(result.score);    
                 chart.data.labels.push(endTime);
                 chart.data.datasets[0].data.push(null);            
                 chart.update('none');
             }
+
+            function onClickRecognitionToggle(){
+                if (started) {
+                    stopSpeechRecognition()                    
+                    started = false;
+                } else {
+                    startSpeechRecognition();
+                    started = true;
+                }
+                document.getElementById("regognition-toggle").innerText = started ? "停止" : "マイク入力開始";
+            }
+
+
 
             window.onload = createChart;
         </script>
@@ -125,12 +177,29 @@
         </style>
     </head>
     <body>
-        <h2>感情分析</h2>
-        <p>PCのマイクに向かって日本語でしゃべってください。語彙を解析し感情極性値を表示します。</p>
-        <button id="regognition-toggle" onclick="onClickRecognitionToggle()">音声認識開始</button>
-        <p id="result"></p>
-        <div class="chart-container">
-            <canvas id="chart"></canvas>
+        <div class="container">
+            <h2>感情分析</h2>
+            <div class="row row-cols-lg-auto">
+                <div class="col-12">
+                    <span>PCのマイクに向かって日本語で喋ってください。語彙を解析し感情極性値を表示します。</span>
+
+                    <button class="btn btn-primary" id="regognition-toggle" onclick="onClickRecognitionToggle()">マイク入力開始</button>
+                </div>
+                <div class="col-12">
+                    <input class="form-control"type="text" id="text" placeholder="テキスト入力も可">
+                </div>        
+                <div class="col-12">
+                    <button class="btn btn-primary" id="sendText" onclick="onClickSendText()">送信</button>
+                </div>
+            </div>
+            <hr>
+            <div class="row row-cols-lg-auto">
+                <div id="texts" class="col-12 d-flex flex-wrap  gap-2"></div>
+            </div>
+            <div class="chart-container">
+                <canvas id="chart"></canvas>
+            </div>
+    
         </div>
     </body>
 </html>

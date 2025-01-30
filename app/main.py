@@ -22,10 +22,11 @@ async def websocket_endpoint(websocket: WebSocket):
     while True:
         text = await websocket.receive_text()
         if text:
+            print(text)
             result = classifier(text)[0]
             if result["label"] == "NEGATIVE":
                 result["score"] *= -1  # NEGATIVE の場合はスコアを反転
-            await websocket.send_text(json.dumps({"score": round(result["score"], 4), "text": text}))
+            await websocket.send_text(json.dumps({"score": round(result["score"], 2), "text": text}))
 
 # HTML応答
 @app.get("/", response_class=HTMLResponse)
