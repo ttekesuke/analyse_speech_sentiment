@@ -1,75 +1,136 @@
 <!DOCTYPE html>
 <html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>感情分析アプリ</title>
-    <script src="https://www.gstatic.com/charts/loader.js"></script>
-    <script>
-        let socket;
-        let sentimentData = [];
-        const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-        // 音声認識が停止されたときに再開する
-        recognition.onend = () => {
-            if (isListening) {                
-                recognition.start();
-            }
-        };                 
-        let timeout;
-        let isListening = false;
-        function startAnalyse() {
-            socket = new WebSocket("ws://localhost:8000/ws");
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>感情分析アプリ</title>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@3.5.0/dist/chart.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.10.6/moment.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.10.6/locale/ja.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment@1.0.0"></script>    
+        <script>
+            let socket;
+            let isListening = false;
+            let chart;
+            let endTime;
+            let started = false;
+            const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
             recognition.continuous = true;
-            recognition.interimResults = false;
-            
+            recognition.interimResults = false;  
+            // Web Speech APIは無音状態が続くと自動的に停止されるので再開する
+            recognition.onend = () => {
+                if (isListening) {
+                    recognition.start();
+                }
+            };
+            function startAnalyse() {
+                socket = new WebSocket("ws://localhost:8000/ws");
 
-            // 音声認識時
-            recognition.onresult = function(event) {
-                const lastTranscript = event.results[event.results.length - 1][0].transcript; // 最新の発話のみ取得
-                // ソケット送信
-                socket.send(lastTranscript);
-            };  
+                // 音声認識時
+                recognition.onresult = function(event) {
+                    endTime = new Date();
+                    if (socket.readyState === 1) {
+                        const lastTranscript = event.results[event.results.length - 1][0].transcript;
+                        socket.send(lastTranscript);
+                    }
+                };
 
-            isListening = true
-            recognition.start();
-            
-            // 受信時
-            socket.onmessage = function(event) {
-                const result = JSON.parse(event.data);
+                isListening = true;
+                recognition.start();
                 
-                sentimentData.push({
-                    time: new Date().toLocaleTimeString(),
-                    score: result.score,
-                    text: result.text                    
+                // サーバから受信
+                socket.onmessage = function(event) {
+                    const result = JSON.parse(event.data);
+                    updateChart(result.score);
+                    document.getElementById("result").innerText += result.text;
+                };
+            }
+
+            function stopAnalyse() {
+                socket.close();
+                isListening = false;
+                recognition.stop();
+            }
+
+            function createChart() {
+                const ctx = document.getElementById('chart').getContext('2d');
+                ctx.canvas.height = "100%";
+                chart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'スコア',
+                            data: [],
+                            borderColor: 'blue',
+                            pointRadius: 10,
+                            fill: false,
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false ,                   
+                        plugins: {
+                            legend: {display: false}
+                        },                
+                        scales: {
+                            x: { 
+                                scaleLabel: {
+                                    display: true,
+                                    labelString: '時間'
+                                },                            
+                                type: 'time', 
+                                time: {
+                                    parser: 'HH:mm:ss',
+                                    unit: 'minute',
+                                    stepSize: 1,
+                                    displayFormats: {
+                                        minutess: 'HH:mm:ss'
+                                    }
+                                },
+                            },
+                            y: { title: { display: true, text: 'スコア' }, min: -1, max: 1 }
+                        }
+                    }
                 });
-                document.getElementById("result").innerText = sentimentData.map(data => data.text).join('')
-                drawChart();
-            };            
-        }
+            }
 
-        function stopAnalyse() {
-            socket.close();
-            isListening = false;
-            recognition.stop();
-            
-        }
+            function onClickRecognitionToggle(){
+                if (started) {
+                    stopAnalyse()
+                    
+                    started = false;
+                } else {
+                    startAnalyse();
+                    started = true;
+                }
+                document.getElementById("regognition-toggle").innerText = started ? "停止" : "開始";
+            }
 
-        function drawChart() {
-            google.charts.load('current', {'packages':['corechart']});
-            google.charts.setOnLoadCallback(() => {
-                const data = google.visualization.arrayToDataTable([['時間', 'スコア'], ...sentimentData.map(data => [data.time, data.score])]);
-                const options = { title: 'ネガポジスコア', legend: { position: 'bottom' } };
-                const chart = new google.visualization.LineChart(document.getElementById('curve_chart'));
-                chart.draw(data, options);
-            });
-        }
-    </script>
-</head>
-<body>
-    <h2>感情分析</h2>
-    <button onclick="startAnalyse()">音声認識開始</button>
-    <button onclick="stopAnalyse()">音声認識終了</button>
-    <p id="result"></p>
-    <div id="curve_chart" style="width: 90%; height: 500px"></div>
-</body>
+            function updateChart(score) {
+                chart.data.labels.push(endTime);
+                chart.data.datasets[0].data.push(score);    
+                chart.data.labels.push(endTime);
+                chart.data.datasets[0].data.push(null);            
+                chart.update('none');
+            }
+
+            window.onload = createChart;
+        </script>
+        <style>
+            .chart-container {
+                height: 500px;
+                width: 100%;
+            }        
+        </style>
+    </head>
+    <body>
+        <h2>感情分析</h2>
+        <p>PCのマイクに向かって日本語でしゃべってください。語彙を解析し感情極性値を表示します。</p>
+        <button id="regognition-toggle" onclick="onClickRecognitionToggle()">音声認識開始</button>
+        <p id="result"></p>
+        <div class="chart-container">
+            <canvas id="chart"></canvas>
+        </div>
+    </body>
 </html>
