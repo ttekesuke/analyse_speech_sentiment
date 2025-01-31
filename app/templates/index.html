@@ -24,6 +24,7 @@
             // 音声認識時            
             recognition.onresult = (event) => {
                 if (socket.readyState === 1) {
+                    analysedTime = new Date();
                     const lastTranscript = event.results[event.results.length - 1][0].transcript;
                     socket.send(lastTranscript);
                 }
@@ -39,8 +40,7 @@
             recognition.interimResults = false;  
             // サーバから受信
             socket.onmessage = function(event) {
-                const result = JSON.parse(event.data);
-                analysedTime = new Date();                    
+                const result = JSON.parse(event.data);                    
                 updateChart(result);
                 const span = document.createElement('span');
                 span.innerHTML = result.text;
@@ -51,6 +51,7 @@
             function onClickSendText() {
                 const text = document.getElementById("text").value;
                 if (socket.readyState === 1) {
+                    analysedTime = new Date();
                     socket.send(text);
                     document.getElementById("text").value = "";
                 }
