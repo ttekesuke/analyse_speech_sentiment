@@ -12,25 +12,35 @@
         <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment@1.0.0"></script>    
         <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>        
         <script>
-            let socket = new WebSocket("ws://localhost:8000/ws");
+            let protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
+            let host = window.location.host;
+            let socket = new WebSocket(`${protocol}${host}/ws`);
             const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
             let isListening = false;
             let chart;
-            let endTime;
+            let analysedTime;
             let started = false;
+
             // 音声認識時            
-            recognition.onresult = function(event) {
-                    if (socket.readyState === 1) {
-                        const lastTranscript = event.results[event.results.length - 1][0].transcript;
-                        socket.send(lastTranscript);
-                    }
-                };
+            recognition.onresult = (event) => {
+                if (socket.readyState === 1) {
+                    const lastTranscript = event.results[event.results.length - 1][0].transcript;
+                    socket.send(lastTranscript);
+                }
+            };
+
+            // Web Speech APIは無音状態が続くと自動的に停止されるので再開する
+            recognition.onend = () => {
+                if (isListening) {
+                    recognition.start();
+                }
+            };                
             recognition.continuous = true;
             recognition.interimResults = false;  
             // サーバから受信
             socket.onmessage = function(event) {
                 const result = JSON.parse(event.data);
-                endTime = new Date();                    
+                analysedTime = new Date();                    
                 updateChart(result);
                 const span = document.createElement('span');
                 span.innerHTML = result.text;
@@ -38,12 +48,6 @@
                 document.getElementById("texts").appendChild(span)
                 
             };            
-            // Web Speech APIは無音状態が続くと自動的に停止されるので再開する
-            recognition.onend = () => {
-                if (isListening) {
-                    recognition.start();
-                }
-            };
             function onClickSendText() {
                 const text = document.getElementById("text").value;
                 if (socket.readyState === 1) {
@@ -104,7 +108,6 @@
                                                                 
                             }                             
                         },
-
                         responsive: true,
                         maintainAspectRatio: false ,                                 
 
@@ -147,9 +150,9 @@
                 });
             }
             function updateChart(result) {
-                chart.data.labels.push(endTime);
+                chart.data.labels.push(analysedTime);
                 chart.data.datasets[0].data.push(result.score);    
-                chart.data.labels.push(endTime);
+                chart.data.labels.push(analysedTime);
                 chart.data.datasets[0].data.push(null);            
                 chart.update('none');
             }
@@ -164,8 +167,6 @@
                 }
                 document.getElementById("regognition-toggle").innerText = started ? "停止" : "マイク入力開始";
             }
-
-
 
             window.onload = createChart;
         </script>
@@ -199,7 +200,6 @@
             <div class="chart-container">
                 <canvas id="chart"></canvas>
             </div>
-    
         </div>
     </body>
 </html>

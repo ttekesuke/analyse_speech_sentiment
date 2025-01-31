@@ -22,7 +22,6 @@ async def websocket_endpoint(websocket: WebSocket):
     while True:
         text = await websocket.receive_text()
         if text:
-            print(text)
             result = classifier(text)[0]
             if result["label"] == "NEGATIVE":
                 result["score"] *= -1  # NEGATIVE の場合はスコアを反転
